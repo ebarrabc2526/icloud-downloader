@@ -685,9 +685,37 @@ def _download_worker(albums, photo_ids, photo_items, all_photos, output_dir, del
     dl["active"] = False
 
 
+_EXT_MAP = {
+    "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
+    "image/heic": ".heic", "image/heif": ".heif", "image/tiff": ".tiff",
+    "image/gif": ".gif", "image/bmp": ".bmp", "image/webp": ".webp",
+    "video/quicktime": ".mov", "video/mp4": ".mp4", "video/mpeg": ".mpeg",
+    "video/x-msvideo": ".avi", "video/3gpp": ".3gp",
+}
+
+def _ensure_extension(filename: str, versions: dict) -> str:
+    """Añade extensión al nombre de fichero si no la tiene."""
+    if os.path.splitext(filename)[1]:
+        return filename
+    orig = versions.get("original") or next(iter(versions.values()), {})
+    ctype = (orig.get("type", "") or "").lower()
+    # Normalizar UTI a MIME
+    if "/" not in ctype:
+        uti_map = {
+            "public.jpeg": "image/jpeg", "public.png": "image/png",
+            "public.heic": "image/heic", "public.heif": "image/heif",
+            "public.tiff": "image/tiff", "public.gif": "image/gif",
+            "com.apple.quicktime-movie": "video/quicktime",
+            "public.mpeg-4": "video/mp4",
+        }
+        ctype = uti_map.get(ctype, "")
+    ext = _EXT_MAP.get(ctype, "")
+    return filename + ext if ext else filename
+
+
 def _download_one(photo, output_dir, delete_after, file_num, total_files, subdir=None):
     fid      = photo.id
-    filename = photo.filename
+    filename = _ensure_extension(photo.filename, photo.versions)
 
     # Resolve actual directory (create album subdirectory if needed)
     if subdir:
@@ -700,13 +728,18 @@ def _download_one(photo, output_dir, delete_after, file_num, total_files, subdir
     try:
         orig = photo.versions.get("original") or next(iter(photo.versions.values()), {})
         expected_size = orig.get("size", 0) or 0
+        width  = orig.get("width")
+        height = orig.get("height")
     except Exception:
         expected_size = 0
+        width = height = None
 
     dl["files"][fid] = {
         "filename": filename,
         "status": "downloading",
         "size": expected_size,
+        "width": width,
+        "height": height,
         "downloaded": 0,
         "verified": False,
         "error": None,
@@ -720,6 +753,8 @@ def _download_one(photo, output_dir, delete_after, file_num, total_files, subdir
         "filename": filename,
         "size": expected_size,
         "size_fmt": format_bytes(expected_size),
+        "width": width,
+        "height": height,
         "file_num": file_num,
         "total_files": total_files,
     })
@@ -834,6 +869,8 @@ def _download_one(photo, output_dir, delete_after, file_num, total_files, subdir
             "size": actual_size,
             "size_fmt": format_bytes(actual_size),
             "expected_size": expected_size,
+            "width": width,
+            "height": height,
             "checksum": checksum,
             "verified": verified,
             "error": verify_error,

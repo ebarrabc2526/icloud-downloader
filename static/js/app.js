@@ -22,11 +22,13 @@ const state = {
   gridSize: 150,
   albums: [],                // all albums from albums_done
   selectedAlbums: new Set(), // selected album names in albums tab
+  fromAlbumsTab: false,      // navigated to browse from albums tab
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
-  setDefaultDir();
+  loadPrefs();
+  document.getElementById("inp-outdir").addEventListener("change", savePrefs);
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -637,12 +639,20 @@ function buildAlbumCard(album) {
 
   // Card click → go to explore tab and load album
   card.onclick = () => {
+    state.fromAlbumsTab = true;
+    document.getElementById("btn-back-albums").classList.remove("d-none");
     showTab("browse");
     const sideItem = document.querySelector(`.album-item[data-name="${CSS.escape(name)}"]`);
     selectAlbum(name, label, sideItem);
   };
 
   return card;
+}
+
+function backToAlbums() {
+  state.fromAlbumsTab = false;
+  document.getElementById("btn-back-albums").classList.add("d-none");
+  showTab("albums");
 }
 
 function updateAlbumSelUI() {
@@ -829,12 +839,81 @@ function clearQueue() {
 //  DOWNLOAD CONFIG
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  PREFERENCIAS (cookies)
+// ══════════════════════════════════════════════════════════════════════════════
+
+function setCookie(name, value, days = 365) {
+  const exp = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)};expires=${exp};path=/`;
+}
+
+function getCookie(name) {
+  for (const part of document.cookie.split(";")) {
+    const c = part.trim();
+    if (c.startsWith(name + "=")) return decodeURIComponent(c.slice(name.length + 1));
+  }
+  return null;
+}
+
+function savePrefs() {
+  const prefs = {
+    outdir:      document.getElementById("inp-outdir")?.value || "",
+    deleteAfter: document.getElementById("chk-delete")?.checked || false,
+    viewMode:    state.viewMode,
+    gridSize:    state.gridSize,
+    showThumbs:  state.showThumbs,
+  };
+  setCookie("icloud_prefs", JSON.stringify(prefs));
+}
+
+function loadPrefs() {
+  const raw = getCookie("icloud_prefs");
+  const outdirEl = document.getElementById("inp-outdir");
+
+  if (!raw) {
+    setDefaultDir();
+    return;
+  }
+
+  try {
+    const p = JSON.parse(raw);
+
+    // Directorio de descarga
+    if (outdirEl) outdirEl.value = p.outdir || "";
+    if (!p.outdir && outdirEl) setDefaultDir();
+
+    // Borrar tras descarga
+    if (p.deleteAfter) {
+      const chk = document.getElementById("chk-delete");
+      const box = document.getElementById("delete-toggle-box");
+      if (chk) chk.checked = true;
+      if (box) box.classList.add("active");
+    }
+
+    // Tamaño de cuadrícula (cargar antes de activar el modo)
+    if (p.gridSize) {
+      state.gridSize = p.gridSize;
+      const slider = document.getElementById("grid-size-slider");
+      if (slider) slider.value = p.gridSize;
+    }
+
+    // Modo de vista
+    if (p.viewMode === "grid") setViewMode("grid");
+
+    // Miniaturas en lista
+    if (p.showThumbs) toggleThumbs();
+
+  } catch {
+    setDefaultDir();
+  }
+}
+
 function setDefaultDir() {
   const now  = new Date();
   const pad  = n => String(n).padStart(2, "0");
   const date = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-  const time = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-  document.getElementById("inp-outdir").value = `d:\\fotos\\${date}_${time}`;
+  document.getElementById("inp-outdir").value = `d:\\fotos\\${date}`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -877,6 +956,7 @@ function setViewMode(mode) {
 function setGridSize(val) {
   state.gridSize = parseInt(val);
   document.getElementById("photo-grid").style.setProperty("--card-size", state.gridSize + "px");
+  savePrefs();
 }
 
 function appendPhotoCards(photos, startIndex) {
@@ -977,12 +1057,14 @@ function toggleThumbs() {
       img.removeAttribute("data-src");
     });
   }
+  savePrefs();
 }
 
 function toggleDeleteAfter(box) {
   const chk = document.getElementById("chk-delete");
   chk.checked = !chk.checked;
   box.classList.toggle("active", chk.checked);
+  savePrefs();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1052,7 +1134,8 @@ socket.on("file_start", d => {
   document.getElementById("cf-bar").style.width  = "0%";
   document.getElementById("cf-downloaded").textContent = "0 B";
   document.getElementById("cf-size").textContent = d.size_fmt || fmtBytes(d.size);
-  log(`↓ [${d.file_num}/${d.total_files}] ${d.filename}  (${d.size_fmt || fmtBytes(d.size)})`, "dl");
+  const dimStr = (d.width && d.height) ? `  ${fmtNum(d.width)}×${fmtNum(d.height)}` : "";
+  log(`↓ [${d.file_num}/${d.total_files}] ${d.filename}  (${d.size_fmt || fmtBytes(d.size)})${dimStr}`, "dl");
 });
 
 socket.on("progress", d => {
@@ -1081,7 +1164,8 @@ socket.on("file_complete", d => {
   document.getElementById("s-files").textContent = `${fmtNum(d.completed + d.failed)} / ${fmtNum(d.total_files)}`;
 
   if (d.verified) {
-    log(`✓ ${d.filename}  ${d.size_fmt || fmtBytes(d.size)}  ·  ${d.checksum ? d.checksum.slice(0,16) + "…" : ""}`, "success");
+    const okDims = (d.width && d.height) ? `  ${fmtNum(d.width)}×${fmtNum(d.height)}` : "";
+    log(`✓ ${d.filename}  ${d.size_fmt || fmtBytes(d.size)}${okDims}  ·  ${d.checksum ? d.checksum.slice(0,16) + "…" : ""}`, "success");
   } else {
     log(`⚠ ${d.filename}  VERIFICACIÓN FALLIDA: ${d.error}`, "warning");
   }
@@ -1194,10 +1278,13 @@ function renderResults(filter) {
         ? `<span class="text-danger" style="font-size:0.75em">${escHtml(r.error)}</span>`
         : "—";
 
+    const dims = (r.width && r.height) ? `${fmtNum(r.width)}×${fmtNum(r.height)}` : "—";
+
     tr.innerHTML = `
       <td class="text-center">${icon}</td>
       <td class="text-light small">${escHtml(r.filename || "")}</td>
       <td class="text-muted small">${r.size_fmt || (r.size ? fmtBytes(r.size) : "—")}</td>
+      <td class="text-muted small">${dims}</td>
       <td>${checksum}</td>
       <td>${icloudBadge}</td>
       <td class="text-muted small" style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
@@ -1251,6 +1338,13 @@ function showTab(name) {
   for (const t of ["browse", "download", "results", "albums"]) {
     document.getElementById("tab-" + t).classList.toggle("d-none", t !== name);
     document.getElementById("tbtn-" + t).classList.toggle("active", t === name);
+  }
+  // Hide back button if navigating to browse directly (not from albums tab)
+  if (name === "browse" && !state.fromAlbumsTab) {
+    document.getElementById("btn-back-albums").classList.add("d-none");
+  }
+  if (name !== "browse") {
+    state.fromAlbumsTab = false;
   }
 }
 

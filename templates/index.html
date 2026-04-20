@@ -184,6 +184,10 @@
         <!-- Barra de herramientas del álbum -->
         <div class="panel-toolbar">
           <div class="d-flex align-items-center gap-2 min-w-0">
+            <button id="btn-back-albums" class="btn btn-sm btn-outline-secondary d-none"
+                    onclick="backToAlbums()" title="Volver a álbumes">
+              <i class="fas fa-arrow-left"></i>
+            </button>
             <h6 id="album-title" class="mb-0 text-light text-truncate">Selecciona un álbum</h6>
             <span id="album-badge" class="badge bg-secondary"></span>
             <span id="album-size-badge" class="badge bg-dark text-muted border border-secondary"></span>
@@ -507,6 +511,7 @@
                     <th width="50" class="text-center">Estado</th>
                     <th>Archivo</th>
                     <th width="90">Tamaño</th>
+                    <th width="110">Resolución</th>
                     <th width="180">SHA-256 (parcial)</th>
                     <th width="110">iCloud</th>
                     <th>Ruta local</th>
