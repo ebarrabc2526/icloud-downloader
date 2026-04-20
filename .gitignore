@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+*.egg-info/
+
+# iCloud session / credentials
+.pyicloud/
+*_session/
+cookies/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

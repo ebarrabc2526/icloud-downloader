@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iCloud Downloader</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <link href="/static/css/styles.css" rel="stylesheet">
+  <style>
+    @keyframes progress-bar-stripes {
+      from { background-position: 1rem 0; }
+      to   { background-position: 0 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ LOGIN ═══════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="text-center mb-4">
+      <i class="fab fa-apple login-apple-icon"></i>
+      <h3 class="mt-2 fw-light">iCloud Downloader</h3>
+      <p class="text-muted small">Descarga y gestiona tus fotos y vídeos de iCloud</p>
+    </div>
+
+    <!-- Formulario login -->
+    <div id="login-form">
+      <div class="mb-3">
+        <label class="form-label text-muted small">APPLE ID</label>
+        <input id="inp-email" type="email" class="form-control" placeholder="usuario@icloud.com"
+               onkeydown="if(event.key==='Enter') document.getElementById('inp-password').focus()">
+      </div>
+      <div class="mb-4">
+        <label class="form-label text-muted small">CONTRASEÑA</label>
+        <div class="input-group">
+          <input id="inp-password" type="password" class="form-control" placeholder="••••••••••"
+                 onkeydown="if(event.key==='Enter') doLogin()">
+          <button class="btn btn-outline-secondary" type="button"
+                  onclick="togglePassVis('inp-password', this)">
+            <i class="fas fa-eye"></i>
+          </button>
+        </div>
+      </div>
+      <button id="btn-login" class="btn btn-primary w-100 btn-lg" onclick="doLogin()">
+        <i class="fas fa-sign-in-alt me-2"></i>Iniciar sesión
+      </button>
+    </div>
+
+    <!-- Formulario 2FA -->
+    <div id="twofa-form" class="d-none">
+      <div class="alert alert-info py-2 small mb-3">
+        <i class="fas fa-mobile-alt me-2"></i>
+        Apple ha enviado un código de verificación a tus dispositivos de confianza.
+      </div>
+      <div class="mb-4">
+        <label class="form-label text-muted small">CÓDIGO DE VERIFICACIÓN</label>
+        <input id="inp-code" type="text" class="form-control form-control-lg text-center code-input"
+               maxlength="6" placeholder="000000"
+               onkeydown="if(event.key==='Enter') do2FA()">
+      </div>
+      <button id="btn-2fa" class="btn btn-primary w-100 btn-lg" onclick="do2FA()">
+        <i class="fas fa-check-circle me-2"></i>Verificar
+      </button>
+      <button class="btn btn-link w-100 mt-2 text-muted" onclick="resetLogin()">
+        ← Volver al inicio de sesión
+      </button>
+    </div>
+
+    <div id="login-error" class="alert alert-danger mt-3 d-none small"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ APP PRINCIPAL ═════════════════════════════════════ -->
+<div id="main-app" class="d-none">
+
+  <!-- ── Barra superior ── -->
+  <nav class="topnav d-flex align-items-center px-3 gap-3">
+    <span class="brand">
+      <i class="fab fa-apple" style="color:#0a84ff"></i> iCloud Downloader
+    </span>
+
+    <!-- Estadísticas de almacenamiento -->
+    <div id="storage-widget" class="storage-widget ms-3">
+      <div class="d-flex align-items-center gap-2">
+        <i class="fas fa-cloud text-info small"></i>
+        <div class="progress storage-progress">
+          <div id="stor-bar" class="progress-bar bg-info" style="width:0%"></div>
+        </div>
+        <span id="stor-label" class="text-muted small">Cargando...</span>
+        <button class="btn btn-xs btn-outline-secondary" onclick="loadStorage()" title="Actualizar">
+          <i class="fas fa-sync-alt fa-xs"></i>
+        </button>
+      </div>
+      <div id="stor-detail" class="text-muted" style="font-size:0.7em; margin-top:2px;"></div>
+    </div>
+
+    <div class="ms-auto d-flex align-items-center gap-2">
+      <span id="nav-username" class="text-muted small"></span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="doLogout()" title="Cerrar sesión">
+        <i class="fas fa-sign-out-alt"></i>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── Barra de progreso global ── -->
+  <div id="gbar-wrap" style="display:none; height:6px; background:#21262d;">
+    <div id="gbar-fill" style="height:6px; width:5%; background:#0a84ff;
+         transition:width 0.3s; background-image:linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
+         background-size:1rem 1rem; animation:progress-bar-stripes 1s linear infinite;"></div>
+  </div>
+  <div id="gbar-label" style="display:none; padding:4px 16px; background:#161b22;
+       border-bottom:1px solid #30363d; font-size:0.78rem; color:#8b949e;">
+    <span id="gbar-text"></span>
+    <strong id="gbar-pct" style="color:#0a84ff; margin-left:8px;"></strong>
+  </div>
+
+  <!-- ── Layout principal ── -->
+  <div class="main-layout">
+
+    <!-- ════════ SIDEBAR – álbumes ════════ -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <i class="fas fa-photo-film me-2 text-muted"></i>ÁLBUMES
+        <button class="btn btn-xs btn-outline-secondary ms-auto" onclick="loadAlbums()" title="Recargar">
+          <i class="fas fa-sync-alt fa-xs"></i>
+        </button>
+      </div>
+
+      <!-- Botón descargar todo -->
+      <div class="p-2">
+        <div class="album-all-btn" onclick="queueAll()">
+          <i class="fas fa-cloud-download-alt text-primary me-2"></i>
+          <span class="text-primary fw-semibold">Descargar todo iCloud</span>
+          <i class="fas fa-chevron-right ms-auto text-muted small"></i>
+        </div>
+      </div>
+
+      <div id="album-list" class="album-list">
+        <div class="loading-placeholder">
+          <div class="spinner-border spinner-border-sm text-secondary"></div>
+          <span class="ms-2 text-muted small">Cargando álbumes...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ════════ CONTENIDO PRINCIPAL ════════ -->
+    <main class="content-area">
+
+      <!-- ── Pestañas ── -->
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tbtn-browse" onclick="showTab('browse')">
+          <i class="fas fa-images me-1"></i>Explorar
+        </button>
+        <button class="tab-btn" id="tbtn-download" onclick="showTab('download')">
+          <i class="fas fa-download me-1"></i>Descarga
+          <span id="badge-queue" class="tab-badge d-none">0</span>
+        </button>
+        <button class="tab-btn" id="tbtn-results" onclick="showTab('results')">
+          <i class="fas fa-check-circle me-1"></i>Resultados
+          <span id="badge-results" class="tab-badge bg-success d-none">0</span>
+        </button>
+        <button class="tab-btn" id="tbtn-albums" onclick="showTab('albums')">
+          <i class="fas fa-layer-group me-1"></i>Álbumes
+        </button>
+      </div>
+
+      <!-- ════ TAB: EXPLORAR ════ -->
+      <div id="tab-browse" class="tab-panel">
+
+        <!-- Barra de progreso de carga (siempre visible mientras carga) -->
+        <div id="album-progress-wrap" style="height:4px; background:var(--bg2); display:none;">
+          <div id="album-progress-fill"
+               style="height:4px; width:0%; background:var(--blue); transition:width 0.4s;"></div>
+        </div>
+        <div id="album-progress-label" class="d-none px-3 py-1 border-bottom border-secondary"
+             style="background:var(--bg1); font-size:0.75rem; color:var(--muted);">
+          <span class="spinner-border spinner-border-sm me-2" style="width:.7rem;height:.7rem;border-width:2px;"></span>
+          <span id="album-progress-text"></span>
+          <span id="album-progress-pct" class="ms-auto" style="color:var(--blue); font-weight:600;"></span>
+        </div>
+
+        <!-- Barra de herramientas del álbum -->
+        <div class="panel-toolbar">
+          <div class="d-flex align-items-center gap-2 min-w-0">
+            <h6 id="album-title" class="mb-0 text-light text-truncate">Selecciona un álbum</h6>
+            <span id="album-badge" class="badge bg-secondary"></span>
+            <span id="album-size-badge" class="badge bg-dark text-muted border border-secondary"></span>
+          </div>
+          <div class="d-flex gap-2 flex-shrink-0 align-items-center">
+            <button class="btn btn-sm btn-outline-secondary" onclick="selectAll()">
+              <i class="fas fa-check-double me-1"></i>Todo
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="selectNone()">
+              <i class="fas fa-times me-1"></i>Ninguno
+            </button>
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-outline-secondary active" id="btn-view-list"
+                      onclick="setViewMode('list')" title="Vista lista">
+                <i class="fas fa-list"></i>
+              </button>
+              <button class="btn btn-outline-secondary" id="btn-view-grid"
+                      onclick="setViewMode('grid')" title="Vista mosaico">
+                <i class="fas fa-th"></i>
+              </button>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-thumbs"
+                    onclick="toggleThumbs()" title="Miniaturas en lista">
+              <i class="fas fa-image me-1"></i>Min.
+            </button>
+            <input type="range" id="grid-size-slider" min="80" max="280" value="150"
+                   style="width:70px;display:none;cursor:pointer;accent-color:var(--blue)"
+                   oninput="setGridSize(this.value)" title="Tamaño de cuadrícula">
+            <button class="btn btn-sm btn-outline-secondary d-none" id="btn-load-more"
+                    onclick="loadMorePhotos()">
+              <i class="fas fa-plus me-1"></i>Cargar más
+            </button>
+          </div>
+        </div>
+
+        <!-- Estado vacío / cargando -->
+        <div id="photos-placeholder" class="empty-state">
+          <i class="fas fa-folder-open fa-3x mb-3 text-muted d-block"></i>
+          Selecciona un álbum en la barra lateral
+        </div>
+        <div id="photos-loading" class="empty-state d-none">
+          <div class="text-light mb-2 fw-semibold" id="album-load-status">Conectando con iCloud...</div>
+          <div class="w-100" style="max-width:380px">
+            <div class="progress mb-2" style="height:18px; border-radius:9px; background:var(--bg3);">
+              <div id="album-load-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
+                   style="width:5%; min-width:24px; transition:width 0.4s; font-size:0.75rem; line-height:18px;">
+              </div>
+            </div>
+            <div id="album-load-count" class="text-muted small text-center"></div>
+          </div>
+        </div>
+
+        <!-- Tabla de fotos -->
+        <div id="photos-wrapper" class="photos-scroll d-none">
+          <table class="table table-dark table-hover table-sm photos-table mb-0" id="photos-table">
+            <thead>
+              <tr>
+                <th width="36">
+                  <input type="checkbox" id="chk-all" class="form-check-input"
+                         onchange="toggleSelectAll(this)">
+                </th>
+                <th>Nombre</th>
+                <th width="130">Fecha</th>
+                <th width="90">Tamaño</th>
+                <th width="80">Tipo</th>
+              </tr>
+            </thead>
+            <tbody id="photos-tbody"></tbody>
+          </table>
+          <div id="photo-grid" class="photo-grid d-none"></div>
+        </div>
+
+        <!-- Footer carga progresiva -->
+        <div id="loading-more-footer" class="d-none border-top border-secondary px-3 py-2" style="background:var(--bg1)">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="spinner-border spinner-border-sm text-primary flex-shrink-0"></span>
+            <span id="loading-more-text" class="text-muted small flex-grow-1"></span>
+            <span id="loading-more-pct" class="text-primary small fw-bold"></span>
+          </div>
+          <div class="progress" style="height:5px; border-radius:3px;">
+            <div id="loading-more-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
+                 style="width:0%; transition:width 0.4s"></div>
+          </div>
+        </div>
+
+        <!-- Footer de selección -->
+        <div id="sel-footer" class="sel-footer d-none">
+          <div class="d-flex align-items-center gap-3">
+            <span id="sel-count" class="text-light fw-semibold"></span>
+            <span id="sel-size" class="text-muted small"></span>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="addSelectionToQueue()">
+            <i class="fas fa-plus me-1"></i>Añadir a la cola de descarga
+          </button>
+        </div>
+      </div><!-- /tab-browse -->
+
+      <!-- ════ TAB: DESCARGA ════ -->
+      <div id="tab-download" class="tab-panel d-none">
+
+        <!-- Configuración -->
+        <div class="config-bar border-bottom border-secondary p-3">
+          <div class="row g-3 align-items-end">
+            <div class="col-lg-7">
+              <label class="form-label text-muted small mb-1">DIRECTORIO DE DESCARGA</label>
+              <div class="input-group">
+                <input id="inp-outdir" type="text" class="form-control"
+                       placeholder="d:\fotos\2024-01-15 o /mnt/d/fotos/...">
+                <button class="btn btn-outline-secondary" onclick="setDefaultDir()" title="Usar directorio por defecto">
+                  <i class="fas fa-magic me-1"></i>Por defecto
+                </button>
+              </div>
+              <div class="text-muted" style="font-size:0.72em; margin-top:3px;">
+                Por defecto: <code>d:\fotos\AAAA-MM-DD_HH-MM-SS</code>
+                &nbsp;·&nbsp; Acepta rutas Windows (<code>d:\</code>) o Linux (<code>/mnt/d/</code>)
+              </div>
+            </div>
+            <div class="col-lg-5 d-flex align-items-end">
+              <div class="delete-toggle p-3 rounded border w-100"
+                   id="delete-toggle-box"
+                   onclick="toggleDeleteAfter(this)">
+                <input class="form-check-input me-2" type="checkbox" id="chk-delete" onclick="event.stopPropagation()">
+                <label class="form-check-label" for="chk-delete">
+                  <i class="fas fa-trash-alt text-warning me-1"></i>
+                  <strong>Borrar de iCloud</strong> tras descarga verificada
+                </label>
+                <div class="text-muted small mt-1">
+                  Solo se borrarán los ficheros con verificación <span class="text-success">✓ OK</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cola + controles -->
+        <div class="p-3 border-bottom border-secondary">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 text-light">
+              <i class="fas fa-list-ul me-2 text-muted"></i>Cola de descarga
+              <span id="lbl-queue-count" class="badge bg-secondary ms-2">0 elementos</span>
+            </h6>
+            <div class="btn-group btn-group-sm">
+              <button id="btn-start" class="btn btn-success" onclick="startDownload()">
+                <i class="fas fa-play me-1"></i>Iniciar descarga
+              </button>
+              <button id="btn-cancel" class="btn btn-danger d-none" onclick="cancelDownload()">
+                <i class="fas fa-stop me-1"></i>Cancelar
+              </button>
+              <button id="btn-clear-queue" class="btn btn-outline-secondary" onclick="clearQueue()">
+                <i class="fas fa-trash me-1"></i>Vaciar
+              </button>
+            </div>
+          </div>
+          <div id="queue-items"></div>
+        </div>
+
+        <!-- Progreso -->
+        <div id="progress-panel" class="p-3 d-none">
+
+          <!-- Progreso global -->
+          <div class="stat-card mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="text-light fw-semibold">Progreso total</span>
+              <span id="prog-pct" class="text-primary fw-bold fs-5">0%</span>
+            </div>
+            <div class="progress mb-3" style="height:14px; border-radius:7px;">
+              <div id="prog-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
+                   style="width:0%; transition:width 0.3s"></div>
+            </div>
+            <div class="stat-grid">
+              <div class="stat-item">
+                <div class="stat-label">Descargado</div>
+                <div id="s-downloaded" class="stat-value text-info">0 B</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Total</div>
+                <div id="s-total" class="stat-value text-light">0 B</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Velocidad</div>
+                <div id="s-speed" class="stat-value text-success">— B/s</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Tiempo restante</div>
+                <div id="s-eta" class="stat-value text-warning">—</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Archivos</div>
+                <div id="s-files" class="stat-value text-light">0 / 0</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Verificados</div>
+                <div id="s-ok" class="stat-value text-success">0</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Errores</div>
+                <div id="s-err" class="stat-value text-danger">0</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Borrados iCloud</div>
+                <div id="s-del" class="stat-value text-warning">0</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Fichero actual -->
+          <div class="stat-card mb-3" id="current-file-card">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-muted small">Descargando ahora:</span>
+              <span id="cf-pct" class="text-info small fw-bold">0%</span>
+            </div>
+            <div class="text-light small text-truncate mb-2" id="cf-name" style="max-width:100%;">—</div>
+            <div class="progress" style="height:6px; border-radius:3px;">
+              <div id="cf-bar" class="progress-bar bg-info" style="width:0%; transition:width 0.2s"></div>
+            </div>
+            <div class="d-flex justify-content-between mt-1">
+              <span id="cf-downloaded" class="text-muted" style="font-size:0.72em;"></span>
+              <span id="cf-size" class="text-muted" style="font-size:0.72em;"></span>
+            </div>
+          </div>
+
+          <!-- Log en tiempo real -->
+          <div class="log-card">
+            <div class="log-header">
+              <span><i class="fas fa-terminal me-2"></i>Registro en tiempo real</span>
+              <button class="btn btn-xs btn-outline-secondary" onclick="clearLog()">Limpiar</button>
+            </div>
+            <div id="dl-log" class="log-body"></div>
+          </div>
+        </div><!-- /progress-panel -->
+      </div><!-- /tab-download -->
+
+      <!-- ════ TAB: ÁLBUMES ════ -->
+      <div id="tab-albums" class="tab-panel d-none" style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
+        <div class="p-3 border-bottom border-secondary d-flex align-items-center gap-3">
+          <h6 class="mb-0 text-light"><i class="fas fa-layer-group me-2"></i>Explorador de álbumes</h6>
+          <span id="albums-tab-status" class="text-muted small"></span>
+        </div>
+        <div class="albums-tab-body" style="overflow-y:auto;flex:1;padding:16px;">
+          <div class="albums-section mb-4">
+            <div class="albums-section-title"><i class="fas fa-folder me-2 text-warning"></i>Mis álbumes</div>
+            <div id="album-cards-normal" class="album-cards mt-2"></div>
+          </div>
+          <div class="albums-section">
+            <div class="albums-section-title"><i class="fas fa-share-alt me-2 text-info"></i>Compartidos</div>
+            <div id="album-cards-shared" class="album-cards mt-2"></div>
+          </div>
+        </div>
+        <div id="album-sel-footer" class="sel-footer d-none">
+          <div class="d-flex align-items-center gap-3">
+            <span id="album-sel-count" class="text-light fw-semibold"></span>
+            <span id="album-sel-total" class="text-muted small"></span>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary btn-sm" onclick="addAlbumsToQueue()">
+              <i class="fas fa-plus me-1"></i>Añadir a cola
+            </button>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteSelectedAlbums()">
+              <i class="fas fa-trash-alt me-1"></i>Eliminar de iCloud
+            </button>
+          </div>
+        </div>
+      </div><!-- /tab-albums -->
+
+      <!-- ════ TAB: RESULTADOS ════ -->
+      <div id="tab-results" class="tab-panel d-none">
+        <div class="p-3">
+
+          <!-- Resumen -->
+          <div id="results-summary" class="d-none mb-4">
+            <div class="row g-3">
+              <div class="col-6 col-lg-3">
+                <div class="result-stat-card border-success bg-success">
+                  <div id="rs-ok" class="result-stat-num">0</div>
+                  <div class="result-stat-label">Verificados OK</div>
+                </div>
+              </div>
+              <div class="col-6 col-lg-3">
+                <div class="result-stat-card border-danger bg-danger">
+                  <div id="rs-fail" class="result-stat-num">0</div>
+                  <div class="result-stat-label">Con errores</div>
+                </div>
+              </div>
+              <div class="col-6 col-lg-3">
+                <div class="result-stat-card border-info bg-info">
+                  <div id="rs-size" class="result-stat-num">0 B</div>
+                  <div class="result-stat-label">Espacio liberado</div>
+                </div>
+              </div>
+              <div class="col-6 col-lg-3">
+                <div class="result-stat-card border-warning bg-warning">
+                  <div id="rs-del" class="result-stat-num">0</div>
+                  <div class="result-stat-label">Borrados de iCloud</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="results-empty" class="empty-state">
+            <i class="fas fa-clipboard-check fa-3x mb-3 d-block text-muted"></i>
+            Los resultados aparecerán aquí al finalizar la descarga
+          </div>
+
+          <!-- Tabla de resultados -->
+          <div id="results-table-wrap" class="d-none">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="text-light mb-0"><i class="fas fa-list me-2"></i>Detalle por archivo</h6>
+              <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-secondary" onclick="filterResults('all')"
+                        id="rf-all">Todos</button>
+                <button class="btn btn-outline-success" onclick="filterResults('ok')"
+                        id="rf-ok">Verificados</button>
+                <button class="btn btn-outline-danger" onclick="filterResults('fail')"
+                        id="rf-fail">Con errores</button>
+              </div>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="table table-dark table-hover table-sm results-table">
+                <thead>
+                  <tr>
+                    <th width="50" class="text-center">Estado</th>
+                    <th>Archivo</th>
+                    <th width="90">Tamaño</th>
+                    <th width="180">SHA-256 (parcial)</th>
+                    <th width="110">iCloud</th>
+                    <th>Ruta local</th>
+                  </tr>
+                </thead>
+                <tbody id="results-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /tab-results -->
+
+    </main>
+  </div><!-- /main-layout -->
+</div><!-- /main-app -->
+
+<!-- ═══════════════════════ PREVIEW MODAL ═══════════════════════ -->
+<div id="preview-modal" class="preview-modal d-none" role="dialog">
+  <div class="preview-backdrop" onclick="closePreview()"></div>
+  <button class="preview-close" onclick="closePreview()" title="Cerrar (Esc)">
+    <i class="fas fa-times"></i>
+  </button>
+  <button class="preview-nav preview-prev" onclick="previewNav(-1)" title="Anterior">
+    <i class="fas fa-chevron-left"></i>
+  </button>
+  <button class="preview-nav preview-next" onclick="previewNav(1)" title="Siguiente">
+    <i class="fas fa-chevron-right"></i>
+  </button>
+  <div class="preview-content">
+    <div id="preview-media" class="preview-media"></div>
+    <div class="preview-info">
+      <span id="preview-filename" class="text-light fw-semibold"></span>
+      <span id="preview-date" class="text-muted"></span>
+      <span id="preview-size" class="text-muted"></span>
+      <span id="preview-counter" class="text-muted ms-auto"></span>
+    </div>
+  </div>
+  <button class="preview-delete" onclick="deleteFromPreview()" title="Eliminar de iCloud">
+    <i class="fas fa-trash-alt"></i>
+  </button>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container" class="position-fixed bottom-0 end-0 p-3" style="z-index:9999;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
