@@ -509,29 +509,43 @@ function onPhotoCheck(id, chk) {
 }
 
 function toggleSelectAll(masterChk) {
-  document.querySelectorAll(".photo-chk").forEach(c => {
-    c.checked = masterChk.checked;
-    if (masterChk.checked) state.selectedIds.add(c.dataset.id);
-    else                   state.selectedIds.delete(c.dataset.id);
-  });
-  updateSelectionUI();
+  if (masterChk.checked) selectAll(); else selectNone();
 }
 
 function selectAll() {
-  document.getElementById("chk-all").checked = true;
-  document.querySelectorAll(".photo-chk").forEach(c => {
-    c.checked = true;
-    state.selectedIds.add(c.dataset.id);
+  // Add every loaded photo to state (works for both views)
+  state.currentPhotos.forEach(p => state.selectedIds.add(p.id));
+
+  // Table view: tick all checkboxes
+  const masterChk = document.getElementById("chk-all");
+  if (masterChk) masterChk.checked = true;
+  document.querySelectorAll(".photo-chk").forEach(c => { c.checked = true; });
+
+  // Grid view: mark all cards selected
+  document.querySelectorAll(".photo-card").forEach(card => {
+    card.classList.add("selected");
+    const btn = card.querySelector(".card-select-btn");
+    if (btn) { btn.classList.add("sel"); btn.querySelector("i").className = "fas fa-check-circle"; }
   });
+
   updateSelectionUI();
 }
 
 function selectNone() {
-  document.getElementById("chk-all").checked = false;
-  document.querySelectorAll(".photo-chk").forEach(c => {
-    c.checked = false;
-  });
   state.selectedIds.clear();
+
+  // Table view
+  const masterChk = document.getElementById("chk-all");
+  if (masterChk) masterChk.checked = false;
+  document.querySelectorAll(".photo-chk").forEach(c => { c.checked = false; });
+
+  // Grid view
+  document.querySelectorAll(".photo-card").forEach(card => {
+    card.classList.remove("selected");
+    const btn = card.querySelector(".card-select-btn");
+    if (btn) { btn.classList.remove("sel"); btn.querySelector("i").className = "fas fa-circle"; }
+  });
+
   updateSelectionUI();
 }
 
