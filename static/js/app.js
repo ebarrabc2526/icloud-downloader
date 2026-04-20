@@ -566,6 +566,44 @@ function addSelectionToQueue() {
   toast(`${fmtNum(newItems.length)} elemento${newItems.length !== 1 ? "s" : ""} añadidos a la cola`, "success");
 }
 
+async function deleteSelectedPhotos() {
+  if (state.selectedIds.size === 0) return;
+  const ids = [...state.selectedIds];
+  const n   = ids.length;
+  if (!confirm(`¿Eliminar ${fmtNum(n)} foto${n !== 1 ? "s" : ""} de iCloud?\n\nEsta acción no se puede deshacer.`)) return;
+
+  try {
+    const res  = await apiFetch("/api/photos/delete", { photo_ids: ids });
+    const data = await res.json();
+    if (data.error) { toast("Error: " + data.error, "danger"); return; }
+
+    const deletedSet = new Set(data.deleted_ids || []);
+    const errCount   = (data.errors || []).length;
+
+    // Remove deleted photos from state and DOM
+    state.currentPhotos = state.currentPhotos.filter(p => !deletedSet.has(p.id));
+    deletedSet.forEach(id => {
+      state.selectedIds.delete(id);
+      document.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove();
+    });
+
+    // Re-index grid cards
+    if (state.viewMode === "grid") {
+      document.querySelectorAll(".photo-card").forEach((c, idx) => { c.dataset.idx = idx; });
+    }
+
+    updateSelectionUI();
+    const del = data.deleted || 0;
+    toast(
+      `${fmtNum(del)} foto${del !== 1 ? "s" : ""} eliminada${del !== 1 ? "s" : ""}` +
+      (errCount > 0 ? ` · ${errCount} error${errCount !== 1 ? "es" : ""}` : ""),
+      errCount > 0 ? "warning" : "success"
+    );
+  } catch (e) {
+    toast("Error al eliminar: " + e.message, "danger");
+  }
+}
+
 function queueAll() {
   state.downloadQueue = [{ id: "__all__", filename: "Todas las fotos y vídeos de iCloud", all: true }];
   renderQueue();

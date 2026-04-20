@@ -279,9 +279,14 @@
             <span id="sel-count" class="text-light fw-semibold"></span>
             <span id="sel-size" class="text-muted small"></span>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="addSelectionToQueue()">
-            <i class="fas fa-plus me-1"></i>Añadir a la cola de descarga
-          </button>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary btn-sm" onclick="addSelectionToQueue()">
+              <i class="fas fa-plus me-1"></i>Añadir a la cola
+            </button>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteSelectedPhotos()">
+              <i class="fas fa-trash-alt me-1"></i>Eliminar de iCloud
+            </button>
+          </div>
         </div>
       </div><!-- /tab-browse -->
 

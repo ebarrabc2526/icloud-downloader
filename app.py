@@ -360,6 +360,26 @@ def api_photo_delete(photo_id):
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/photos/delete", methods=["POST"])
+def api_photos_delete_batch():
+    """Delete multiple photos at once. Returns which IDs were actually deleted."""
+    data = request.get_json() or {}
+    photo_ids = data.get("photo_ids") or []
+    deleted_ids, errors = [], []
+    for pid in photo_ids:
+        photo = photo_cache.get(pid)
+        if not photo:
+            errors.append(f"{pid}: no en caché")
+            continue
+        try:
+            photo.delete()
+            photo_cache.pop(pid, None)
+            deleted_ids.append(pid)
+        except Exception as exc:
+            errors.append(str(exc))
+    return jsonify({"deleted": len(deleted_ids), "deleted_ids": deleted_ids, "errors": errors[:10]})
+
+
 @app.route("/api/album/<path:album_name>/delete_photos", methods=["POST"])
 def api_album_delete_photos(album_name):
     svc = g.get("service")
