@@ -181,14 +181,18 @@ code { background: var(--bg3); padding: 1px 5px; border-radius: 4px; font-size: 
 .album-item:hover { background: var(--bg2); }
 .album-item-shared.active { background: rgba(88,166,255,0.12); color: #58a6ff; }
 .album-section-header {
-  padding: 8px 12px 4px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  padding: 6px 12px 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted);
   border-top: 1px solid var(--border);
-  margin-top: 4px;
+  margin-top: 8px;
+}
+.album-section-header:first-child {
+  border-top: none;
+  margin-top: 0;
 }
 .album-item.active {
   background: rgba(10,132,255,0.15);

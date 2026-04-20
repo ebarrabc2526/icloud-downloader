@@ -412,17 +412,36 @@ def api_album_leave_shared(album_name):
             return jsonify({"error": "No es un álbum compartido"}), 400
         from urllib.parse import urlencode
         params = urlencode(source.service.params)
-        url = f"{source._album_location}webunsubscribe?{params}"
-        resp = source.service.session.post(
-            url,
-            json={"albumguid": source._album_guid},
-            headers={"Content-Type": "plain/text"},
-        )
-        if resp.ok:
-            return jsonify({"left": True})
+        # Derive the service-level base URL from the library's shared_streams_url
+        # e.g. "https://p41-sharedstreams.icloud.com/{zone}/sharedstreams/webgetalbumslist"
+        # → strip trailing "webgetalbumslist" to get the base
+        base_url = source._library.shared_streams_url
+        if "webgetalbumslist" in base_url:
+            base_url = base_url.split("webgetalbumslist")[0]
+        else:
+            # Fallback: use album_location directly
+            base_url = source._album_location
+        last_exc = None
+        for endpoint in ("webunsubscribe", "webdeletefromsharedstream"):
+            url = f"{base_url}{endpoint}?{params}"
+            try:
+                source.service.session.post(
+                    url,
+                    json={
+                        "albumguid": source._album_guid,
+                        "albumctag": source._album_ctag,
+                    },
+                    headers={"Content-Type": "plain/text"},
+                )
+                # If session.post() didn't raise, the call succeeded (PyiCloudSession
+                # raises on 4xx/5xx via raise_for_status internally)
+                return jsonify({"left": True})
+            except Exception as exc:
+                last_exc = exc
+                continue
         return jsonify({
             "left": False,
-            "error": f"Error al abandonar álbum: HTTP {resp.status_code}",
+            "error": f"No se pudo abandonar el álbum compartido: {last_exc}",
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500

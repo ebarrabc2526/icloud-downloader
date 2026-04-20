@@ -606,35 +606,48 @@ function _rebuildSidebar() {
   const list = document.getElementById("album-list");
   if (!list) return;
   list.innerHTML = "";
-  let sharedHeaderAdded = false;
-  for (const album of _sortedAlbums()) {
-    if (album.shared && !sharedHeaderAdded) {
-      const sep = document.createElement("div");
-      sep.className = "album-section-header";
-      sep.innerHTML = `<i class="fas fa-share-alt me-1"></i>Compartidos`;
-      list.appendChild(sep);
-      sharedHeaderAdded = true;
-    }
-    list.appendChild(buildAlbumItem(album));
+
+  const sorted  = _sortedAlbums();
+  const normals = sorted.filter(a => !a.shared);
+  const shareds = sorted.filter(a => a.shared);
+
+  // Personal albums section
+  const hdrNormal = document.createElement("div");
+  hdrNormal.className = "album-section-header";
+  hdrNormal.innerHTML = `<i class="fas fa-folder me-1 text-warning"></i>Mis álbumes`;
+  list.appendChild(hdrNormal);
+  normals.forEach(a => list.appendChild(buildAlbumItem(a)));
+
+  // Shared albums section
+  if (shareds.length > 0) {
+    const hdrShared = document.createElement("div");
+    hdrShared.className = "album-section-header";
+    hdrShared.innerHTML = `<i class="fas fa-share-alt me-1 text-info"></i>Compartidos`;
+    list.appendChild(hdrShared);
+    shareds.forEach(a => list.appendChild(buildAlbumItem(a)));
   }
 }
 
 function renderAlbumsTab() {
   const normalEl = document.getElementById("album-cards-normal");
   const sharedEl = document.getElementById("album-cards-shared");
-  if (!normalEl) return;
+  if (!normalEl || !sharedEl) return;
   normalEl.innerHTML = "";
   sharedEl.innerHTML = "";
 
-  for (const album of _sortedAlbums()) {
-    const card = buildAlbumCard(album);
-    (album.shared ? sharedEl : normalEl).appendChild(card);
-  }
+  const sorted   = _sortedAlbums();
+  const normals  = sorted.filter(a => !a.shared);
+  const shareds  = sorted.filter(a => a.shared);
 
-  if (state.albums.filter(a => !a.shared).length === 0)
-    normalEl.innerHTML = `<div class="text-muted small">Sin álbumes personales</div>`;
-  if (state.albums.filter(a => a.shared).length === 0)
-    sharedEl.innerHTML = `<div class="text-muted small">Sin álbumes compartidos</div>`;
+  if (normals.length === 0)
+    normalEl.innerHTML = `<div class="text-muted small py-2">Sin álbumes personales</div>`;
+  else
+    normals.forEach(a => normalEl.appendChild(buildAlbumCard(a)));
+
+  if (shareds.length === 0)
+    sharedEl.innerHTML = `<div class="text-muted small py-2">Sin álbumes compartidos</div>`;
+  else
+    shareds.forEach(a => sharedEl.appendChild(buildAlbumCard(a)));
 }
 
 function buildAlbumCard(album) {
