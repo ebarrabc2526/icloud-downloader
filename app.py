@@ -377,7 +377,22 @@ def api_album_delete_photos(album_name):
                 deleted += 1
             except Exception as e:
                 errors.append(str(e))
-        return jsonify({"deleted": deleted, "errors": errors[:5]})
+        # Delete the album container itself
+        album_deleted = False
+        album_delete_error = None
+        try:
+            result = source.delete()
+            album_deleted = bool(result)
+        except NotImplementedError:
+            album_delete_error = "El álbum no se puede eliminar (álbum inteligente o compartido)"
+        except Exception as e:
+            album_delete_error = str(e)
+        return jsonify({
+            "deleted": deleted,
+            "errors": errors[:5],
+            "album_deleted": album_deleted,
+            "album_delete_error": album_delete_error,
+        })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

@@ -366,6 +366,9 @@ function setPhotoState(state_name, errorMsg) {
   if (state_name === "loading") {
     document.getElementById("photos-tbody").innerHTML = "";
     document.getElementById("photo-grid").innerHTML = "";
+    // Reset placeholder to default in case it was showing a "deleted" message
+    document.getElementById("photos-placeholder-icon").className = "fas fa-folder-open fa-3x mb-3 text-muted d-block";
+    document.getElementById("photos-placeholder-text").textContent = "Selecciona un álbum en la barra lateral";
   }
   const isTable = state_name === "table";
   document.getElementById("photos-placeholder").classList.toggle("d-none", state_name !== "idle");
@@ -379,9 +382,8 @@ function setPhotoState(state_name, errorMsg) {
 
   if (state_name === "error") {
     document.getElementById("photos-placeholder").classList.remove("d-none");
-    document.getElementById("photos-placeholder").innerHTML = `
-      <i class="fas fa-exclamation-triangle fa-3x mb-3 d-block text-danger"></i>
-      <div class="text-danger">${escHtml(errorMsg)}</div>`;
+    document.getElementById("photos-placeholder-icon").className = "fas fa-exclamation-triangle fa-3x mb-3 d-block text-danger";
+    document.getElementById("photos-placeholder-text").innerHTML = `<div class="text-danger">${escHtml(errorMsg)}</div>`;
   }
 }
 
@@ -655,6 +657,35 @@ function backToAlbums() {
   showTab("albums");
 }
 
+function _removeAlbumFromUI(name) {
+  // 1. Remove from state
+  state.albums = state.albums.filter(a => a.name !== name);
+
+  // 2. Remove card in albums tab
+  document.querySelector(`.album-exp-card[data-name="${CSS.escape(name)}"]`)?.remove();
+
+  // 3. Remove item in sidebar
+  document.querySelector(`.album-item[data-name="${CSS.escape(name)}"]`)?.remove();
+
+  // 4. Update albums-tab-status counter
+  document.getElementById("albums-tab-status").textContent =
+    `${fmtNum(state.albums.length)} álbumes`;
+
+  // 5. If currently viewing this album in browse, clear the view
+  if (state.currentAlbum === name) {
+    state.currentAlbum = null;
+    document.getElementById("album-title").textContent = "Álbum eliminado";
+    document.getElementById("album-badge").textContent = "";
+    document.getElementById("album-size-badge").textContent = "";
+    document.getElementById("photos-wrapper").classList.add("d-none");
+    document.getElementById("photo-grid").classList.add("d-none");
+    document.getElementById("photos-placeholder-icon").className = "fas fa-trash-alt fa-3x mb-3 text-danger d-block";
+    document.getElementById("photos-placeholder-text").textContent = "El álbum ha sido eliminado de iCloud";
+    document.getElementById("photos-placeholder").classList.remove("d-none");
+    document.getElementById("photos-loading").classList.add("d-none");
+  }
+}
+
 function updateAlbumSelUI() {
   const n = state.selectedAlbums.size;
   const footer = document.getElementById("album-sel-footer");
@@ -705,7 +736,7 @@ async function deleteSelectedAlbums() {
   const labels  = names.map(n => state.albums.find(a => a.name === n)?.display_name || n);
   if (!confirm(`¿Eliminar TODAS las fotos de ${names.length} álbum${names.length !== 1 ? "es" : ""} de iCloud?\n\n${labels.join(", ")}\n\nEsta acción no se puede deshacer.`)) return;
 
-  let totalDeleted = 0, totalErrors = 0;
+  let totalDeleted = 0, totalErrors = 0, albumsRemoved = 0;
   for (const name of names) {
     try {
       const res  = await apiFetch(`/api/album/${encodeURIComponent(name)}/delete_photos`, {});
@@ -713,6 +744,13 @@ async function deleteSelectedAlbums() {
       if (data.error) { toast(`Error en "${name}": ${data.error}`, "danger"); totalErrors++; continue; }
       totalDeleted += data.deleted || 0;
       totalErrors  += (data.errors || []).length;
+      // Remove album from state and UI if deleted successfully
+      if (data.album_deleted) {
+        _removeAlbumFromUI(name);
+        albumsRemoved++;
+      } else if (data.album_delete_error) {
+        toast(`"${name}": ${data.album_delete_error}`, "warning");
+      }
     } catch (e) {
       toast(`Error en "${name}": ${e.message}`, "danger");
       totalErrors++;
@@ -720,7 +758,13 @@ async function deleteSelectedAlbums() {
   }
   state.selectedAlbums.clear();
   updateAlbumSelUI();
-  toast(`${fmtNum(totalDeleted)} fotos eliminadas${totalErrors > 0 ? ` (${totalErrors} errores)` : ""}`, totalErrors > 0 ? "warning" : "success");
+  const parts = [];
+  if (totalDeleted > 0) parts.push(`${fmtNum(totalDeleted)} fotos eliminadas`);
+  if (albumsRemoved > 0) parts.push(`${fmtNum(albumsRemoved)} álbum${albumsRemoved !== 1 ? "es" : ""} eliminado${albumsRemoved !== 1 ? "s" : ""}`);
+  toast(
+    parts.length ? parts.join(" · ") + (totalErrors > 0 ? ` (${totalErrors} errores)` : "") : "Sin cambios",
+    totalErrors > 0 ? "warning" : "success"
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
