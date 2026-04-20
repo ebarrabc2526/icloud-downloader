@@ -766,22 +766,26 @@ async function deleteSelectedAlbums() {
   const names = [...state.selectedAlbums];
 
   // Separate shared vs normal albums
-  const sharedNames  = names.filter(n => state.albums.find(a => a.name === n)?.shared);
-  const normalNames  = names.filter(n => !state.albums.find(a => a.name === n)?.shared);
+  const sharedNames = names.filter(n => state.albums.find(a => a.name === n)?.shared);
+  const normalNames = names.filter(n => !state.albums.find(a => a.name === n)?.shared);
 
-  if (sharedNames.length > 0 && normalNames.length === 0) {
-    toast("Los álbumes compartidos no se pueden eliminar desde iCloud.com. Solo puedes eliminarlos desde el iPhone/iPad.", "warning");
-    return;
+  // Build confirm message
+  let msg = "";
+  if (normalNames.length > 0) {
+    const normalLabels = normalNames.map(n => { const a = state.albums.find(a => a.name === n); return a?.display_name || n; });
+    msg += `¿Eliminar TODAS las fotos de ${normalNames.length} álbum${normalNames.length !== 1 ? "es" : ""} de iCloud?\n\n${normalLabels.join(", ")}`;
   }
-
-  const allAlbums = state.albums.filter(a => names.includes(a.name));
-  const labels    = allAlbums.map(a => a.display_name || a.name);
-  const msg = `¿Eliminar TODAS las fotos de ${normalNames.length} álbum${normalNames.length !== 1 ? "es" : ""} de iCloud?\n\n${labels.join(", ")}` +
-    (sharedNames.length > 0 ? `\n\n⚠️ ${sharedNames.length} álbum${sharedNames.length !== 1 ? "es" : ""} compartido${sharedNames.length !== 1 ? "s" : ""} se omitirá${sharedNames.length !== 1 ? "n" : ""} (no se pueden eliminar).` : "") +
-    `\n\nEsta acción no se puede deshacer.`;
+  if (sharedNames.length > 0) {
+    const sharedLabels = sharedNames.map(n => { const a = state.albums.find(a => a.name === n); return a?.display_name || n; });
+    if (msg) msg += "\n\n";
+    msg += `¿Abandonar ${sharedNames.length} álbum${sharedNames.length !== 1 ? "es" : ""} compartido${sharedNames.length !== 1 ? "s" : ""}?\n\n${sharedLabels.join(", ")}`;
+  }
+  msg += "\n\nEsta acción no se puede deshacer.";
   if (!confirm(msg)) return;
 
   let totalDeleted = 0, totalErrors = 0, albumsRemoved = 0;
+
+  // Process normal albums — delete photos + album container
   for (const name of normalNames) {
     try {
       const res  = await apiFetch(`/api/album/${encodeURIComponent(name)}/delete_photos`, {});
@@ -800,12 +804,33 @@ async function deleteSelectedAlbums() {
       totalErrors++;
     }
   }
+
+  // Process shared albums — leave / unsubscribe
+  for (const name of sharedNames) {
+    const album = state.albums.find(a => a.name === name);
+    const label = album?.display_name || name;
+    try {
+      const res  = await apiFetch(`/api/album/${encodeURIComponent(name)}/leave`, {});
+      const data = await res.json();
+      if (data.error) { toast(`Error al abandonar "${label}": ${data.error}`, "danger"); totalErrors++; continue; }
+      if (data.left) {
+        _removeAlbumFromUI(name);
+        albumsRemoved++;
+      } else {
+        toast(`No se pudo abandonar "${label}"`, "warning");
+        totalErrors++;
+      }
+    } catch (e) {
+      toast(`Error al abandonar "${label}": ${e.message}`, "danger");
+      totalErrors++;
+    }
+  }
+
   state.selectedAlbums.clear();
   updateAlbumSelUI();
   const parts = [];
   if (totalDeleted > 0)  parts.push(`${fmtNum(totalDeleted)} fotos eliminadas`);
   if (albumsRemoved > 0) parts.push(`${fmtNum(albumsRemoved)} álbum${albumsRemoved !== 1 ? "es" : ""} eliminado${albumsRemoved !== 1 ? "s" : ""}`);
-  if (sharedNames.length > 0 && normalNames.length > 0) parts.push(`${fmtNum(sharedNames.length)} compartido${sharedNames.length !== 1 ? "s" : ""} omitido${sharedNames.length !== 1 ? "s" : ""}`);
   toast(
     parts.length ? parts.join(" · ") + (totalErrors > 0 ? ` (${totalErrors} errores)` : "") : "Sin cambios",
     totalErrors > 0 ? "warning" : "success"

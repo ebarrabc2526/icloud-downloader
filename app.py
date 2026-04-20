@@ -397,6 +397,37 @@ def api_album_delete_photos(album_name):
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/album/<path:album_name>/leave", methods=["POST"])
+def api_album_leave_shared(album_name):
+    """Leave (unsubscribe from) a shared photo stream."""
+    svc = g.get("service")
+    if not svc:
+        return jsonify({"error": "No autenticado"}), 401
+    try:
+        source = _find_album_source(svc, album_name)
+        if source is None:
+            return jsonify({"error": "Álbum compartido no encontrado"}), 404
+        from pyicloud.services.photos import SharedPhotoStreamAlbum
+        if not isinstance(source, SharedPhotoStreamAlbum):
+            return jsonify({"error": "No es un álbum compartido"}), 400
+        from urllib.parse import urlencode
+        params = urlencode(source.service.params)
+        url = f"{source._album_location}webunsubscribe?{params}"
+        resp = source.service.session.post(
+            url,
+            json={"albumguid": source._album_guid},
+            headers={"Content-Type": "plain/text"},
+        )
+        if resp.ok:
+            return jsonify({"left": True})
+        return jsonify({
+            "left": False,
+            "error": f"Error al abandonar álbum: HTTP {resp.status_code}",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Albums ────────────────────────────────────────────────────────────────────
 
 def _albums_sort_key(a):
@@ -545,31 +576,33 @@ def api_album_photos(album_name):
 def api_download_start():
     if dl["active"]:
         return jsonify({"error": "Ya hay una descarga en curso"}), 409
+    try:
+        data = request.get_json() or {}
+        output_dir   = (data.get("output_dir") or "").strip()
+        albums       = data.get("albums") or []
+        photo_ids    = data.get("photo_ids") or []
+        photo_items  = data.get("photo_items") or []
+        all_photos   = bool(data.get("all_photos", False))
+        delete_after = bool(data.get("delete_after", False))
 
-    data = request.get_json() or {}
-    output_dir   = data.get("output_dir", "").strip()
-    albums       = data.get("albums", [])
-    photo_ids    = data.get("photo_ids", [])
-    photo_items  = data.get("photo_items", [])   # [{id, album}]
-    all_photos   = data.get("all_photos", False)
-    delete_after = data.get("delete_after", False)
+        if not output_dir:
+            now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            output_dir = f"/mnt/d/fotos/{now}"
+        else:
+            output_dir = win_to_linux(output_dir)
 
-    if not output_dir:
-        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_dir = f"/mnt/d/fotos/{now}"
-    else:
-        output_dir = win_to_linux(output_dir)
+        t = threading.Thread(
+            target=_download_worker,
+            args=(albums, photo_ids, photo_items, all_photos, output_dir, delete_after),
+            daemon=True,
+        )
+        dl["cancelled"] = False
+        dl["thread"] = t
+        t.start()
 
-    t = threading.Thread(
-        target=_download_worker,
-        args=(albums, photo_ids, photo_items, all_photos, output_dir, delete_after),
-        daemon=True,
-    )
-    dl["cancelled"] = False
-    dl["thread"] = t
-    t.start()
-
-    return jsonify({"status": "started", "output_dir": output_dir})
+        return jsonify({"status": "started", "output_dir": output_dir})
+    except Exception as exc:
+        return jsonify({"error": f"Error al iniciar descarga: {exc}"}), 500
 
 
 @app.route("/api/download/cancel", methods=["POST"])
@@ -787,9 +820,33 @@ def _download_one(photo, output_dir, delete_after, file_num, total_files, subdir
     try:
         response = photo.download("original")
         if response is None:
-            raise RuntimeError("sin respuesta (versión original no disponible)")
+            # Fallback for shared stream assets: try every available version
+            raw_data = None
+            for ver in list(photo.versions.keys()):
+                try:
+                    resp = photo.download(ver)
+                    if resp is not None:
+                        raw_data = bytes(resp) if isinstance(resp, (bytes, bytearray)) else None
+                        if raw_data:
+                            break
+                except Exception:
+                    continue
+            if not raw_data:
+                # Last resort: download via URL directly using the service session
+                url = None
+                fields = getattr(photo, "_master_record", {}).get("fields", {})
+                for key in ("resOriginalRes", "resJPEGFullRes", "resJPEGLargeRes", "resJPEGMedRes"):
+                    entry = fields.get(key, {}).get("value", {})
+                    if entry.get("downloadURL"):
+                        url = entry["downloadURL"]
+                        break
+                if url:
+                    resp = photo._service.session.get(url, stream=True)
+                    raw_data = resp.raw.read()
+                if not raw_data:
+                    raise RuntimeError("versión original no disponible (álbum compartido sin URL de descarga)")
         # pyicloud puede devolver bytes directamente o un requests.Response
-        if isinstance(response, (bytes, bytearray)):
+        elif isinstance(response, (bytes, bytearray)):
             raw_data = bytes(response)
         elif hasattr(response, "status_code"):
             if response.status_code != 200:
