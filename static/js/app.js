@@ -732,19 +732,32 @@ function addAlbumsToQueue() {
 
 async function deleteSelectedAlbums() {
   if (state.selectedAlbums.size === 0) return;
-  const names   = [...state.selectedAlbums];
-  const labels  = names.map(n => state.albums.find(a => a.name === n)?.display_name || n);
-  if (!confirm(`¿Eliminar TODAS las fotos de ${names.length} álbum${names.length !== 1 ? "es" : ""} de iCloud?\n\n${labels.join(", ")}\n\nEsta acción no se puede deshacer.`)) return;
+  const names = [...state.selectedAlbums];
+
+  // Separate shared vs normal albums
+  const sharedNames  = names.filter(n => state.albums.find(a => a.name === n)?.shared);
+  const normalNames  = names.filter(n => !state.albums.find(a => a.name === n)?.shared);
+
+  if (sharedNames.length > 0 && normalNames.length === 0) {
+    toast("Los álbumes compartidos no se pueden eliminar desde iCloud.com. Solo puedes eliminarlos desde el iPhone/iPad.", "warning");
+    return;
+  }
+
+  const allAlbums = state.albums.filter(a => names.includes(a.name));
+  const labels    = allAlbums.map(a => a.display_name || a.name);
+  const msg = `¿Eliminar TODAS las fotos de ${normalNames.length} álbum${normalNames.length !== 1 ? "es" : ""} de iCloud?\n\n${labels.join(", ")}` +
+    (sharedNames.length > 0 ? `\n\n⚠️ ${sharedNames.length} álbum${sharedNames.length !== 1 ? "es" : ""} compartido${sharedNames.length !== 1 ? "s" : ""} se omitirá${sharedNames.length !== 1 ? "n" : ""} (no se pueden eliminar).` : "") +
+    `\n\nEsta acción no se puede deshacer.`;
+  if (!confirm(msg)) return;
 
   let totalDeleted = 0, totalErrors = 0, albumsRemoved = 0;
-  for (const name of names) {
+  for (const name of normalNames) {
     try {
       const res  = await apiFetch(`/api/album/${encodeURIComponent(name)}/delete_photos`, {});
       const data = await res.json();
       if (data.error) { toast(`Error en "${name}": ${data.error}`, "danger"); totalErrors++; continue; }
       totalDeleted += data.deleted || 0;
       totalErrors  += (data.errors || []).length;
-      // Remove album from state and UI if deleted successfully
       if (data.album_deleted) {
         _removeAlbumFromUI(name);
         albumsRemoved++;
@@ -759,8 +772,9 @@ async function deleteSelectedAlbums() {
   state.selectedAlbums.clear();
   updateAlbumSelUI();
   const parts = [];
-  if (totalDeleted > 0) parts.push(`${fmtNum(totalDeleted)} fotos eliminadas`);
+  if (totalDeleted > 0)  parts.push(`${fmtNum(totalDeleted)} fotos eliminadas`);
   if (albumsRemoved > 0) parts.push(`${fmtNum(albumsRemoved)} álbum${albumsRemoved !== 1 ? "es" : ""} eliminado${albumsRemoved !== 1 ? "s" : ""}`);
+  if (sharedNames.length > 0 && normalNames.length > 0) parts.push(`${fmtNum(sharedNames.length)} compartido${sharedNames.length !== 1 ? "s" : ""} omitido${sharedNames.length !== 1 ? "s" : ""}`);
   toast(
     parts.length ? parts.join(" · ") + (totalErrors > 0 ? ` (${totalErrors} errores)` : "") : "Sin cambios",
     totalErrors > 0 ? "warning" : "success"
