@@ -442,6 +442,7 @@ def _albums_load_worker(svc):
                 "display_name": name if atype == "shared" else None,
                 "count":        count,
                 "shared":       atype == "shared",
+                "position":     i,   # original order from iCloud API (= iPhone order)
             }
             results.append(entry)
 

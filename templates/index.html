@@ -425,6 +425,16 @@
         <div class="p-3 border-bottom border-secondary d-flex align-items-center gap-3">
           <h6 class="mb-0 text-light"><i class="fas fa-layer-group me-2"></i>Explorador de álbumes</h6>
           <span id="albums-tab-status" class="text-muted small"></span>
+          <div class="ms-auto btn-group btn-group-sm">
+            <button id="btn-sort-iphone" class="btn btn-outline-secondary active"
+                    onclick="setAlbumSort('iphone')" title="Orden del iPhone">
+              <i class="fas fa-mobile-alt me-1"></i>iPhone
+            </button>
+            <button id="btn-sort-alpha" class="btn btn-outline-secondary"
+                    onclick="setAlbumSort('alpha')" title="Orden alfabético">
+              <i class="fas fa-sort-alpha-down me-1"></i>A-Z
+            </button>
+          </div>
         </div>
         <div class="albums-tab-body" style="overflow-y:auto;flex:1;padding:16px;">
           <div class="albums-section mb-4">

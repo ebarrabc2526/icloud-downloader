@@ -23,6 +23,7 @@ const state = {
   albums: [],                // all albums from albums_done
   selectedAlbums: new Set(), // selected album names in albums tab
   fromAlbumsTab: false,      // navigated to browse from albums tab
+  albumSort: "iphone",       // "iphone" | "alpha"
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -222,20 +223,7 @@ socket.on("albums_progress", d => {
 socket.on("albums_done", d => {
   state.albums = d.albums;
   state.selectedAlbums = new Set();
-
-  const list = document.getElementById("album-list");
-  list.innerHTML = "";
-  let sharedHeaderAdded = false;
-  for (const album of d.albums) {
-    if (album.shared && !sharedHeaderAdded) {
-      const sep = document.createElement("div");
-      sep.className = "album-section-header";
-      sep.innerHTML = `<i class="fas fa-share-alt me-1"></i>Compartidos`;
-      list.appendChild(sep);
-      sharedHeaderAdded = true;
-    }
-    list.appendChild(buildAlbumItem(album));
-  }
+  _rebuildSidebar();
   renderAlbumsTab();
   document.getElementById("albums-tab-status").textContent =
     `${fmtNum(d.albums.length)} álbumes`;
@@ -588,6 +576,49 @@ function queueAll() {
 //  ALBUMS TAB
 // ══════════════════════════════════════════════════════════════════════════════
 
+function _sortedAlbums() {
+  const alpha = state.albumSort === "alpha";
+  return [...state.albums].sort((a, b) => {
+    // Library always first
+    const aLib = a.name === "Library" || a.name === "All Photos";
+    const bLib = b.name === "Library" || b.name === "All Photos";
+    if (aLib !== bLib) return aLib ? -1 : 1;
+    // Shared always last
+    if (a.shared !== b.shared) return a.shared ? 1 : -1;
+    // Within group: alpha or original iPhone position
+    if (alpha) {
+      return (a.display_name || a.name).localeCompare(b.display_name || b.name, undefined, { sensitivity: "base" });
+    }
+    return (a.position ?? 999) - (b.position ?? 999);
+  });
+}
+
+function setAlbumSort(mode) {
+  state.albumSort = mode;
+  document.getElementById("btn-sort-iphone").classList.toggle("active", mode === "iphone");
+  document.getElementById("btn-sort-alpha").classList.toggle("active",  mode === "alpha");
+  renderAlbumsTab();
+  _rebuildSidebar();
+  savePrefs();
+}
+
+function _rebuildSidebar() {
+  const list = document.getElementById("album-list");
+  if (!list) return;
+  list.innerHTML = "";
+  let sharedHeaderAdded = false;
+  for (const album of _sortedAlbums()) {
+    if (album.shared && !sharedHeaderAdded) {
+      const sep = document.createElement("div");
+      sep.className = "album-section-header";
+      sep.innerHTML = `<i class="fas fa-share-alt me-1"></i>Compartidos`;
+      list.appendChild(sep);
+      sharedHeaderAdded = true;
+    }
+    list.appendChild(buildAlbumItem(album));
+  }
+}
+
 function renderAlbumsTab() {
   const normalEl = document.getElementById("album-cards-normal");
   const sharedEl = document.getElementById("album-cards-shared");
@@ -595,7 +626,7 @@ function renderAlbumsTab() {
   normalEl.innerHTML = "";
   sharedEl.innerHTML = "";
 
-  for (const album of state.albums) {
+  for (const album of _sortedAlbums()) {
     const card = buildAlbumCard(album);
     (album.shared ? sharedEl : normalEl).appendChild(card);
   }
@@ -921,6 +952,7 @@ function savePrefs() {
     viewMode:    state.viewMode,
     gridSize:    state.gridSize,
     showThumbs:  state.showThumbs,
+    albumSort:   state.albumSort,
   };
   setCookie("icloud_prefs", JSON.stringify(prefs));
 }
@@ -961,6 +993,13 @@ function loadPrefs() {
 
     // Miniaturas en lista
     if (p.showThumbs) toggleThumbs();
+
+    // Orden de álbumes
+    if (p.albumSort === "alpha") {
+      state.albumSort = "alpha";
+      document.getElementById("btn-sort-iphone")?.classList.remove("active");
+      document.getElementById("btn-sort-alpha")?.classList.add("active");
+    }
 
   } catch {
     setDefaultDir();
